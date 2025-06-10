@@ -127,5 +127,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Contact
 
-Name -Utpal Kumar
+Utpal Kumar - [GitHub Profile](https://github.com/utpal-kumar-08)
+
 Project Link: https://github.com/utpal-kumar-08/File-sharing.gitFile Sharing Application
