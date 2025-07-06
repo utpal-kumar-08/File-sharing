@@ -107,7 +107,7 @@ const Home = () => {
           </p>
           <div className="flex justify-center space-x-6">
             <a
-              href="https://github.com/princeInScripts"
+              href="https://github.com/utpal-kumar-08"
               target="_blank"
               className="text-gray-700 hover:text-black flex items-center space-x-2"
             >
