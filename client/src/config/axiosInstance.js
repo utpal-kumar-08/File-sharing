@@ -1,7 +1,7 @@
 // src/config/axiosInstance.js
 import axios from "axios";
 
-const BASE_URL = "http://localhost:5600/api/";
+const BASE_URL = "https://file-sharing-lrx4.onrender.com/";
 const axiosInstance = axios.create({
   baseURL: BASE_URL,
   withCredentials: true, // Include cookies for authentication
