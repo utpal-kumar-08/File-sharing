@@ -10,7 +10,7 @@ const authenticate = (req, res, next) => {
   const token = authHeader.split(" ")[1];
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || "Qw8!zR2@vL6");
     req.user = decoded; // You can access this in your controllers via req.user.userId
     next();
   } catch (err) {

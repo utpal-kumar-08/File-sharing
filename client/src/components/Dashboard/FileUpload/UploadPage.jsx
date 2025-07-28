@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import "./FileUploader.css";
 import { useDispatch, useSelector } from "react-redux";
-import { uploadFile } from "../../../redux/slice/file/fileThunk";
+import { uploadFile, getUserFiles } from "../../../redux/slice/file/fileThunk";
 import { toast } from "react-toastify";
 
 const FileUploader = () => {
@@ -21,11 +21,31 @@ const FileUploader = () => {
   };
 
   const handleFiles = (fileList) => {
-    const newFiles = Array.from(fileList).filter(
-      (file) => file.size <= 10 * 1024 * 1024
-    );
-    setFiles((prev) => [...prev, ...newFiles]);
-    toast.success("File(s) added!");
+    const allowedTypes = [
+      'image/jpeg', 'image/jpg', 'image/png', 'image/webp',
+      'video/mp4', 'video/avi', 'video/quicktime', 'video/x-msvideo',
+      'application/pdf'
+    ];
+
+    const newFiles = Array.from(fileList).filter((file) => {
+      // Enhanced validation
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`${file.name} is too large. Maximum size is 10MB.`);
+        return false;
+      }
+      
+      if (!allowedTypes.includes(file.type)) {
+        toast.error(`${file.name} is not a supported file type.`);
+        return false;
+      }
+      
+      return true;
+    });
+
+    if (newFiles.length > 0) {
+      setFiles((prev) => [...prev, ...newFiles]);
+      toast.success(`${newFiles.length} file(s) added!`);
+    }
   };
 
   const handleFileInputChange = (e) => {
@@ -61,15 +81,29 @@ const FileUploader = () => {
       return;
     }
 
+    // Enhanced user validation
+    const userId = user?._id || user?.id;
+    if (!userId) {
+      toast.error("User not authenticated. Please log in.");
+      return;
+    }
+
+    console.log('🔼 UPLOAD userId:', userId); // Debug log
+
     const formData = new FormData();
-    files.forEach((file) => formData.append("files", file));
-    formData.append("userId", user._id ? user._id : user.id);
+    files.forEach((file, index) => {
+      console.log(`File ${index}:`, { name: file.name, size: file.size, type: file.type });
+      formData.append("files", file);
+    });
+    
+    formData.append("userId", userId);
     formData.append("hasExpiry", enableExpiry);
 
     if (enableExpiry && expiryDate) {
       const hours = Math.ceil(
         (new Date(expiryDate) - new Date()) / (1000 * 60 * 60)
       );
+      console.log('Expiry hours:', hours);
       formData.append("expiresAt", hours);
     }
 
@@ -79,12 +113,28 @@ const FileUploader = () => {
     }
 
     try {
-      await dispatch(uploadFile(formData)).unwrap();
+      console.log('🚀 Starting upload...');
+      // Updated to match the corrected thunk signature
+      // console.log(userId);
+      const result = await dispatch(uploadFile({ formData, userId })).unwrap();
+      console.log('✅ Upload result:', result);
+      
       toast.success("Files uploaded successfully!");
+      
+      // Clear form state
       setFiles([]);
-      window.location.reload();
+      setPassword("");
+      setExpiryDate("");
+      setEnablePassword(false);
+      setEnableExpiry(false);
+      
+      // Refresh files list instead of full page reload
+      console.log('🔄 Refetching files after upload...');
+      dispatch(getUserFiles(userId));
+      
     } catch (err) {
-      toast.error(err?.error || "Upload failed");
+      console.error('❌ Upload error:', err);
+      toast.error(err?.error || err?.message || "Upload failed");
     }
   };
 
@@ -167,6 +217,7 @@ const FileUploader = () => {
               className="expiry-input"
               value={expiryDate}
               onChange={(e) => setExpiryDate(e.target.value)}
+              min={new Date().toISOString().slice(0, 16)}
             />
           )}
         </div>
@@ -184,7 +235,9 @@ const FileUploader = () => {
             </div>
             <div className="stat-item">
               <div className="stat-value">
-                {(totalSize / 1024).toFixed(2)} KB
+                {totalSize > 1024 * 1024
+                  ? `${(totalSize / (1024 * 1024)).toFixed(2)} MB`
+                  : `${(totalSize / 1024).toFixed(2)} KB`}
               </div>
               <div className="stat-label">Total Size</div>
             </div>
@@ -194,7 +247,7 @@ const FileUploader = () => {
               className="progress-fill"
               style={{
                 width: `${Math.min(
-                  (totalSize / (5 * 1024 * 1024)) * 100,
+                  (totalSize / (50 * 1024 * 1024)) * 100,
                   100
                 )}%`,
               }}

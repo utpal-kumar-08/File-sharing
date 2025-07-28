@@ -22,7 +22,7 @@ const Home = () => {
           <p className="text-lg mb-6 text-gray-600">
             Drag, upload, and share your files instantly. No hassle.
           </p>
-          <Link to="/dashbaord">
+          <Link to="/dashboard">
             <button className="bg-blue-600 hover:bg-blue-700 transition px-6 py-3 text-white rounded-full font-medium shadow">
               Get Started Now
             </button>
@@ -101,13 +101,13 @@ const Home = () => {
       <section className="bg-white py-12 px-4 text-center">
         <div className="max-w-3xl mx-auto">
           <FaLaptopCode size={40} className="mx-auto text-gray-700 mb-4" />
-          <h2 className="text-2xl font-bold mb-2">Crafted by Prince Kumar</h2>
+          <h2 className="text-2xl font-bold mb-2">Designed by Utpal </h2>
           <p className="text-gray-600 mb-4">
             Passionate MERN stack developer dedicated to building fast and user-friendly web experiences.
           </p>
           <div className="flex justify-center space-x-6">
             <a
-              href="https://github.com/princeInScripts"
+              href="https://github.com/utpal-kumar-08"
               target="_blank"
               className="text-gray-700 hover:text-black flex items-center space-x-2"
             >
@@ -115,12 +115,10 @@ const Home = () => {
               <span>GitHub</span>
             </a>
             <a
-              href="https://scriptxprince.me"
+              href="https://github.com/utpal-kumar-08"
               target="_blank"
               className="text-blue-600 hover:underline flex items-center space-x-2"
             >
-              <FaLink size={22} />
-              <span>Portfolio</span>
               
             </a>
           </div>

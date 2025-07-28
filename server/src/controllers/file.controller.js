@@ -6,17 +6,31 @@ import shortid from "shortid";
 import QRCode from "qrcode";
 import { User } from '../models/user.models.js';
 import path from "path";
+import mongoose from "mongoose";
 
 const uploadFiles = async (req, res) => {
   if (!req.files || req.files.length === 0) {
     return res.status(400).json({ error: 'No files uploaded' });
   }
+  // console.log("Files received:", req.files.length);
 
   const { isPassword, password, hasExpiry, expiresAt, userId } = req.body;
+  // console.log(userId);
+
+  // ✅ Enhanced validation
+  if (!userId) {
+    return res.status(400).json({ error: 'User ID is required' });
+  }
+  const user_id=userId[0];
+  if (!mongoose.Types.ObjectId.isValid(user_id)) {
+    return res.status(400).json({ error: 'Invalid User ID format' });
+  }
 
   try {
     const savedFiles = [];
-    const user = await User.findById(userId);
+    const user = await User.findById(user_id);
+    console.log("User found:", user);
+    // return;
     if (!user) return res.status(404).json({ error: 'User not found' });
 
     for (const file of req.files) {
@@ -26,16 +40,6 @@ const uploadFiles = async (req, res) => {
       const finalFileName = `${originalName.replace(/\s+/g, '_')}_${uniqueSuffix}${extension}`;
 
       // Upload to Cloudinary
-      const uploadResult = await cloudinary.uploader.upload_stream({
-        resource_type: "auto",
-        public_id: `file-share-app/${finalFileName}`,
-        folder: "file-share-app"
-      }, async (error, result) => {
-        if (error) throw error;
-        return result;
-      });
-      // Note: The above is a placeholder, actual upload_stream usage requires a stream. For buffer, use upload with base64.
-      // Let's use upload with buffer as base64:
       const base64String = `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
       const cloudRes = await cloudinary.uploader.upload(base64String, {
         resource_type: "auto",
@@ -56,7 +60,7 @@ const uploadFiles = async (req, res) => {
           : new Date(Date.now() + 10 * 24 * 3600000),
         status: 'active',
         shortUrl: `${process.env.BASE_URL}/f/${shortCode}`,
-        createdBy: userId,
+        createdBy: user_id,
       };
 
       if (isPassword === 'true') {
@@ -91,6 +95,11 @@ const uploadFiles = async (req, res) => {
 const downloadFile = async (req, res) => {
   const { fileId } = req.params;
   const { password } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(fileId)) {
+    return res.status(400).json({ error: 'Invalid file ID format' });
+  }
+
   try {
     const file = await File.findById(fileId);
     if (!file) {
@@ -111,9 +120,10 @@ const downloadFile = async (req, res) => {
         return res.status(403).json({ error: 'Incorrect password' });
       }
     }
-    // For Cloudinary, the fileUrl is a direct download link
+
     file.downloadedContent++;
     await file.save();
+
     // Update user download count
     const user = await User.findById(file.createdBy);
     if (user) {
@@ -129,6 +139,11 @@ const downloadFile = async (req, res) => {
 
 const deleteFile = async (req, res) => {
   const { fileId } = req.params;
+
+  if (!mongoose.Types.ObjectId.isValid(fileId)) {
+    return res.status(400).json({ error: 'Invalid file ID format' });
+  }
+
   try {
     const file = await File.findById(fileId);
     if (!file) {
@@ -137,6 +152,7 @@ const deleteFile = async (req, res) => {
     if (file.status === 'deleted') {
       return res.status(400).json({ error: 'File already deleted' });
     }
+
     // Delete from Cloudinary
     const publicId = `file-share-app/${file.name}`;
     await cloudinary.uploader.destroy(publicId, { resource_type: "auto" });
@@ -149,61 +165,70 @@ const deleteFile = async (req, res) => {
 };
 
 const updateFileStatus = async (req, res) => {
-     const {fileId} = req.params;
-     const {status} = req.body;
+  const { fileId } = req.params;
+  const { status } = req.body;
 
-     try{
+  if (!mongoose.Types.ObjectId.isValid(fileId)) {
+    return res.status(400).json({ error: 'Invalid file ID format' });
+  }
 
-         if (!['active', 'inactive'].includes(status)) {
-          return res.status(400).json({ error: 'Invalid status' });
-        }
+  try {
+    if (!['active', 'inactive'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid status' });
+    }
 
-        const file=await File.findById(fileId);
+    const file = await File.findById(fileId);
+    if (!file) {
+      return res.status(404).json({ error: 'File not found' });
+    }
 
-        if(!file){
-          return res.status(404).json({error:'File not found'});
-        }
+    if (file.status === status) {
+      return res.status(400).json({ error: 'File already has this status' });
+    }
 
-        if(file.status===status){
-          return res.status(400).json({error:'File already has this status'});
-        }
+    file.status = status;
+    await file.save();
 
-        file.status=status;
-        await file.save();
-
-        return res.status(200).json({message:'File status updated successfully'});
-     }catch(error) {
-        console.error("Update error:", error);
-        return res.status(500).json({ error: 'Internal Server Error' });
-     }
-}
+    return res.status(200).json({ message: 'File status updated successfully' });
+  } catch (error) {
+    console.error("Update error:", error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
 
 const updateFileExpiry = async (req, res) => {
-    const {fileId} = req.params;
-    const { expiresAt} = req.body;
+  const { fileId } = req.params;
+  const { expiresAt } = req.body;
 
-    try{
-       const file=await File.findById(fileId);
-        if(!file){
-            return res.status(404).json({error:'File not found'});
-        }
+  if (!mongoose.Types.ObjectId.isValid(fileId)) {
+    return res.status(400).json({ error: 'Invalid file ID format' });
+  }
 
-        if (expiresAt) {
-          file.expiresAt = new Date(Date.now() + expiresAt * 3600000); // Convert hours to milliseconds
-        }
-
-        await file.save();
-
-    return res.status(200).json({ message: 'File expiry updated successfully' });
-    }catch(error) {
-        console.error("Update error:", error);
-        return res.status(500).json({ error: 'Internal Server Error' });
+  try {
+    const file = await File.findById(fileId);
+    if (!file) {
+      return res.status(404).json({ error: 'File not found' });
     }
-}
+
+    if (expiresAt) {
+      file.expiresAt = new Date(Date.now() + expiresAt * 3600000);
+    }
+
+    await file.save();
+    return res.status(200).json({ message: 'File expiry updated successfully' });
+  } catch (error) {
+    console.error("Update error:", error);
+    return res.status(500).json({ error: 'Internal Server Error' });
+  }
+};
 
 const updateFilePassword = async (req, res) => {
   const { fileId } = req.params;
   const { newPassword } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(fileId)) {
+    return res.status(400).json({ error: 'Invalid file ID format' });
+  }
 
   try {
     const file = await File.findById(fileId);
@@ -220,7 +245,6 @@ const updateFilePassword = async (req, res) => {
     await file.save();
 
     return res.status(200).json({ message: 'File password updated successfully' });
-
   } catch (error) {
     console.error("Update password error:", error);
     return res.status(500).json({ error: "Error updating file password" });
@@ -228,11 +252,11 @@ const updateFilePassword = async (req, res) => {
 };
 
 const searchFiles = async (req, res) => {
-  const { query } = req.query; // Search query string
+  const { query } = req.query;
 
   try {
     const files = await File.find({
-      name: { $regex: query, $options: 'i' }, // Case-insensitive search
+      name: { $regex: query, $options: 'i' },
     });
 
     if (!files.length) {
@@ -240,27 +264,56 @@ const searchFiles = async (req, res) => {
     }
 
     return res.status(200).json(files);
-
   } catch (error) {
     console.error("Search error:", error);
     return res.status(500).json({ error: "Error searching files" });
   }
 };
 
-const showUserFiles = async (req, res) => {
+// const getUserFiles = async (req, res) => {
+//   const { userId } = req.params;
+
+//   if (!mongoose.Types.ObjectId.isValid(userId)) {
+//     return res.status(400).json({ error: 'Invalid user ID format' });
+//   }
+
+//   try {
+//     const files = await File.find({ createdBy: userId });
+
+//     if (!files.length) {
+//       return res.status(404).json({ message: 'No files found for this user' });
+//     }
+
+//     return res.status(200).json(files);
+//   } catch (error) {
+//     console.error("List files error:", error);
+//     return res.status(500).json({ error: "Error fetching user files" });
+//   }
+// };
+const getUserFiles = async (req, res) => {
   const { userId } = req.params;
 
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    return res.status(400).json({ error: 'Invalid user ID format' });
+  }
+
   try {
-    const files = await File.find({ createdBy: userId });
+    console.log('🔍 Searching for files with createdBy:', userId);
+    
+    // ✅ Enhanced query with better logging
+    const files = await File.find({ createdBy: userId }).sort({ createdAt: -1 });
+    
+    console.log('📄 Found files:', files.length);
+    console.log('📄 Files data:', files.map(f => ({ id: f._id, name: f.name, createdBy: f.createdBy })));
 
     if (!files.length) {
-      return res.status(404).json({ message: 'No files found' });
+      // ✅ Instead of 404, return empty array for better UX
+      return res.status(200).json([]);
     }
 
     return res.status(200).json(files);
-
   } catch (error) {
-    console.error("List files error:", error);
+    console.error("Get user files error:", error);
     return res.status(500).json({ error: "Error fetching user files" });
   }
 };
@@ -268,21 +321,29 @@ const showUserFiles = async (req, res) => {
 const getFileDetails = async (req, res) => {
   const { fileId } = req.params;
 
+  if (!mongoose.Types.ObjectId.isValid(fileId)) {
+    return res.status(400).json({ error: 'Invalid file ID format' });
+  }
+
   try {
     const file = await File.findById(fileId);
     if (!file) {
       return res.status(404).json({ message: 'File not found' });
     }
     return res.status(200).json(file);
-  }
-  catch (error) {
+  } catch (error) {
     console.error("Get file details error:", error);
     return res.status(500).json({ error: "Error fetching file details" });
   }
-}
+};
 
 const generateShareShortenLink = async (req, res) => {
   const { fileId } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(fileId)) {
+    return res.status(400).json({ error: 'Invalid file ID format' });
+  }
+
   try {
     const file = await File.findById(fileId);
     if (!file) return res.status(404).json({ error: 'File not found' });
@@ -296,15 +357,20 @@ const generateShareShortenLink = async (req, res) => {
     console.error('Shorten link error:', error);
     res.status(500).json({ error: 'Error generating short link' });
   }
-}; 
+};
 
 const sendLinkEmail = async (req, res) => {
   const { fileId, email } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(fileId)) {
+    return res.status(400).json({ error: 'Invalid file ID format' });
+  }
+
   try {
     const file = await File.findById(fileId);
     if (!file) return res.status(404).json({ error: 'File not found' });
 
-    const transporter = nodemailer.createTransport({
+    const transporter = nodemailer.createTransporter({
       service: 'gmail',
       auth: {
         user: process.env.MAIL_USER,
@@ -312,32 +378,28 @@ const sendLinkEmail = async (req, res) => {
       }
     });
 
-   const mailOptions = {
-  from: `"File Share App" <${process.env.MAIL_USER}>`,
-  to: email,
-  subject: 'Your Shared File Link',
-  html: `
-    <div style="font-family: Arial, sans-serif; line-height: 1.6;">
-      <h2>📎 You've received a file!</h2>
-      <p>Hello,</p>
-      <p>You have been sent a file using <strong>File Share App</strong>.</p>
-      <p><strong>File Name:</strong> ${file.name}</p>
-      <p><strong>File Type:</strong> ${file.type}</p>
-      <p><strong>Size:</strong> ${(file.size / 1024).toFixed(2)} KB</p>
-      <p><strong>Download Link:</strong></p>
-      <p><a href="${file.path}" target="_blank" style="color: #3366cc;">Click here to download your file</a></p>
-      ${
-        file.expiresAt
-          ? `<p><strong>Note:</strong> This link will expire on <strong>${new Date(
-              file.expiresAt
-            ).toLocaleString()}</strong>.</p>`
-          : ''
-      }
-      <p>Thank you for using File Share App!</p>
-    </div>
-  `
-};
-
+    const mailOptions = {
+      from: `"File Share App" <${process.env.MAIL_USER}>`,
+      to: email,
+      subject: 'Your Shared File Link',
+      html: `
+        <div style="font-family: Arial, sans-serif; line-height: 1.6;">
+          <h2>📎 You've received a file!</h2>
+          <p>Hello,</p>
+          <p>You have been sent a file using <strong>File Share App</strong>.</p>
+          <p><strong>File Name:</strong> ${file.name}</p>
+          <p><strong>File Type:</strong> ${file.type}</p>
+          <p><strong>Size:</strong> ${(file.size / 1024).toFixed(2)} KB</p>
+          <p><strong>Download Link:</strong></p>
+          <p><a href="${file.path}" target="_blank" style="color: #3366cc;">Click here to download your file</a></p>
+          ${file.expiresAt
+            ? `<p><strong>Note:</strong> This link will expire on <strong>${new Date(file.expiresAt).toLocaleString()}</strong>.</p>`
+            : ''
+          }
+          <p>Thank you for using File Share App!</p>
+        </div>
+      `
+    };
 
     await transporter.sendMail(mailOptions);
     res.status(200).json({ message: 'Link sent successfully' });
@@ -350,12 +412,15 @@ const sendLinkEmail = async (req, res) => {
 const generateQR = async (req, res) => {
   const { fileId } = req.params;
 
+  if (!mongoose.Types.ObjectId.isValid(fileId)) {
+    return res.status(400).json({ error: 'Invalid file ID format' });
+  }
+
   try {
     const file = await File.findById(fileId);
     if (!file) return res.status(404).json({ error: 'File not found' });
 
     const fileUrl = file.path;
-
     const qrDataUrl = await QRCode.toDataURL(fileUrl);
 
     res.status(200).json({ qr: qrDataUrl });
@@ -368,21 +433,23 @@ const generateQR = async (req, res) => {
 const getDownloadCount = async (req, res) => {
   const { fileId } = req.params;
 
+  if (!mongoose.Types.ObjectId.isValid(fileId)) {
+    return res.status(400).json({ error: 'Invalid file ID format' });
+  }
+
   try {
     const file = await File.findById(fileId);
     if (!file) return res.status(404).json({ error: 'File not found' });
     res.status(200).json({ downloadCount: file.downloadedContent });
-  }
-  catch (error) {
+  } catch (error) {
     console.error('Get download count error:', error);
     res.status(500).json({ error: 'Failed to get download count' });
   }
-}
+};
 
 const resolveShareLink = async (req, res) => {
   const { code } = req.params;
-const shortUrl = `${process.env.BASE_URL}/f/${code}`;
-const file = await File.findOne({ shortUrl });
+  const shortUrl = `${process.env.BASE_URL}/f/${code}`;
 
   try {
     const file = await File.findOne({ shortUrl });
@@ -402,7 +469,7 @@ const file = await File.findOne({ shortUrl });
       fileId: file._id,
       name: file.name,
       size: file.size,
-      type: file.type || "file", // fallback if missing
+      type: file.type || "file",
       previewUrl: file.path,
       isPasswordProtected: file.isPasswordProtected || false,
       expiresAt: file.expiresAt || null,
@@ -416,6 +483,10 @@ const file = await File.findOne({ shortUrl });
 
 const verifyFilePassword = async (req, res) => {
   const { fileId, password } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(fileId)) {
+    return res.status(400).json({ error: 'Invalid file ID format' });
+  }
 
   try {
     const file = await File.findById(fileId);
@@ -432,39 +503,20 @@ const verifyFilePassword = async (req, res) => {
   }
 };
 
-const getUserFiles = async (req, res) => {
-
-  const { userId } = req.params;
-  try {
-    const files = await File.find({ createdBy: userId });
-
-    if (!files.length) {
-      return res.status(404).json({ message: 'No files found' });
-    }
-
-    return res.status(200).json(files);
-
-  } catch (error) {
-    console.error("List files error:", error);
-    return res.status(500).json({ error: "Error fetching user files" });
-  }
-}
-
 export {
-    uploadFiles,
-    downloadFile,
-    deleteFile,
-    updateFileStatus,
-    updateFileExpiry,
-    updateFilePassword,
-    searchFiles,
-    showUserFiles,
-    getFileDetails,
-    generateShareShortenLink,
-    sendLinkEmail,
-    generateQR,
-    getDownloadCount,
-    resolveShareLink,
-    verifyFilePassword,
-    getUserFiles
-}
+  uploadFiles,
+  downloadFile,
+  deleteFile,
+  updateFileStatus,
+  updateFileExpiry,
+  updateFilePassword,
+  searchFiles,
+  getUserFiles,
+  getFileDetails,
+  generateShareShortenLink,
+  sendLinkEmail,
+  generateQR,
+  getDownloadCount,
+  resolveShareLink,
+  verifyFilePassword
+};

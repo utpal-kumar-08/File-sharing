@@ -1,1 +1,1 @@
-export const DB_NAME="SharePod"
+export const DB_NAME="FileSharingDB";
